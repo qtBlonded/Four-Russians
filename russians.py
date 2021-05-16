@@ -115,6 +115,66 @@ def FourRussians_energy(A, B):
     #No OR done in hardware, Ci holds final value
     return round(100*L2 + 10*L1)
 
+def FourRussians_no_cache_energy(A, B):
+    """
+    Return the result of AxB.
+    
+    A & B are expected to be square matrixs.
+    """
+    assert len(A) > 0 and len(A[0]) == len(A)
+    assert len(B) > 0 and len(B[0]) == len(A[0]) #Check if A & B are square
+    n = len(A) #pre padded
+    #Assuming that cache is sized correctly with input matrix size
+    m = math.floor(math.log(n, 2)) 
+    padLength = m - (n % m)
+    #Ignoring energy this code for energy analysis, for now
+    if (n%m != 0):
+        for pad in range(padLength):
+            B.append([0] * n)
+        [row.extend([0]*padLength) for row in A]
+    
+    L2 = 0
+    L1 = 0
+    OR = 0
+
+    C = [[0] * n for _ in range(n)] # Initialize all 0s output matrix
+
+    for i in range(math.ceil(n/m)):
+        #Set aside 2^m x n storage in L1 for RS table
+        RS = [[0] * n for _ in range(2**m+1)] # 2^m x n
+
+        #Maybe take in B part
+
+        bp = 1
+        k = 0
+        for j in range(1, 2**m + 1):
+            RS[j] = [x | y for x, y in zip(RS[j - 2**k], B[m*i + m - (k + 1)])]
+            L2 += n #Read row of B from L2 cache
+            L2 += n #Read a previous row of RS from L2 cache
+            L2 += n #Write row for RS[j] to L2 cache
+            OR += n #n bit-wise XOR, basically nothing
+
+            if bp == 1:
+                bp = j + 1
+                k = k + 1
+            else:
+                bp = bp - 1
+
+        #Set aside nxn matrix in L1
+        Ci = [[0] * n for _ in range(n)] # nxn all 0's
+
+        for j in range(n):
+            Ci[j] = RS[listToDecimal(A[j][m*i:m*i + m])]
+            L2 += 2*n #Read and write an entire row to the L2 cache for Ci[j] matrix
+            L2 += m #Read in m row for A[j] in from L2
+            L2 += n #Read row of RS from L1 cache
+
+        #Or bitwise C and Ci
+        for x in range(n):
+            for y in range(n):
+                C[x][y] = C[x][y] | Ci[x][y]
+    return round(100*L2 + 10*L1)
+
 def FourRussians_delay(A, B):
     """
     Return the result of AxB.
@@ -223,13 +283,10 @@ def matrix_mult_energy(A, B):
             #Set aside space for C[i][j] in L1 cache
             for k in range(n):
                 L1 += 1 #Read A[i][k] from cache
-                L1 += 2 #Read C[i][j] from cache
+                L2 += 2 #Read/Write C[i][j] from L2
                 L2 += 1 #Read B[k][j]
                 MACs += 1 
                 C[i][j] += A[i][k]* B[k][j]
-            #Read C[i][j] from L1, write to L2, don't need to use again
-            L1 += 1
-            L2 += 1
     return round(100*L2 + 10*L1 + 0.1*MACs)
 
 def matrix_mult_delay(A, B):
@@ -282,8 +339,37 @@ def test_algo(n, algo): #Tests for correctness/debuggers
     else:
         print("Matrix C equals correct matrix.\n")
 
+def RS_test(A, B):
+    """
+    Test function used to understand the incrementation/population of RS.
+    """
+    n = len(A) #pre padded
+    #Assuming that cache is sized correctly with input matrix size
+    m = math.floor(math.log(n, 2)) 
+    padLength = m - (n % m)
+    #Ignoring energy this code for energy analysis, for now
+    if (n%m != 0):
+        for pad in range(padLength):
+            B.append([0] * n)
+        [row.extend([0]*padLength) for row in A]
+    for i in range(math.ceil(n/m)):
+        #Set aside 2^m x n storage in L1 for RS table
+        RS = [[0] * n for _ in range(2**m+1)] # 2^m x n
+        bp = 1
+        k = 0
+        for j in range(1, 2**m + 1):
+            print("Reference: {}\nRefRow: {}\n\nbp: {}\nj: {}\nk: {}\n".format(j-2**k
+                                        , " ".join(str(x) for x in RS[j-2**k]), bp, j, k))
+            RS[j] = [x | y for x, y in zip(RS[j - 2**k], B[m*i + m - (k + 1)])]
+            if bp == 1:
+                bp = j + 1
+                k = k + 1
+            else:
+                bp = bp - 1
+            pretty_print(RS)
+
 def test_metric(n, metric):
-    sparcity = 10
+    sparcity = 50
 
     A = np.array([[1 if random.randint(0, 100) <= sparcity else 0 for __ in range(n)] for _ in range(n) ])
     B = np.array([[1 if random.randint(0, 100) <= sparcity else 0 for __ in range(n)] for _ in range(n)])
@@ -301,25 +387,67 @@ def EDP(results1, results2):
     edp = [x*y for x, y in zip(results1, results2)]
     return edp
 
+def MM_area(A, B):
+    n = len(A)
+    L2 = 3*(n**2)
+    L1 = n
+    return (L2, L1)
+
+def FourRussians_area(A, B):
+    n = len(A)
+    L2 = 3*(n**2)
+    L1 = 2*(n**2)
+    return (L2, L1)
+
+def FourRussians_no_cache_area(A, B):
+    n = len(A)
+    L2 = 4*(n**2)
+    L1 = 0
+    return (L2, L1)
+
 def main():
     #test_algo(60, FourRussians)
     #test_algo(10, matrix_mult)
-    n = [5, 10, 50, 100, 500] #, 1000]
-
+    n = [5, 10, 50]#, 100, 500, 1000]
+    
+    print("Energy for MM, 4R, 4R_no_cache")
     energy1 = mass_test_metric(n, matrix_mult_energy)
     print(energy1)
     energy2 = mass_test_metric(n, FourRussians_energy)
     print(energy2)
+    energy3 = mass_test_metric(n, FourRussians_no_cache_energy)
+    print(energy3)
     
+    print("\nDelay for MM, 4R, 4R_no_cache")
     delay1 = mass_test_metric(n, matrix_mult_delay)
     print(delay1)
     delay2 = mass_test_metric(n, FourRussians_delay)
     print(delay2)
+    #No difference in delay between cache and no cache
+    print(delay2)
 
+    print("\nEDP for MM, 4R, 4R_no_cache")
     edp1 = EDP(energy1, delay1)
     print(edp1)
     edp2 = EDP(energy2, delay2)
     print(edp2)
+    edp3 = EDP(energy3, delay2)
+    print(edp3)
+    
+    print("\nArea (L2, L1) for MM, 4R, 4R_no_cache")
+    area1 = mass_test_metric(n, MM_area)
+    print(area1)
+    area2 = mass_test_metric(n, FourRussians_area)
+    print(area2)
+    area3 = mass_test_metric(n, FourRussians_no_cache_area)
+    print(area3)
+    
+    print("\nArea total for MM, 4R, 4R_no_cache")
+    print([sum(x) for x in area1])
+    print([sum(x) for x in area2])
+    print([sum(x) for x in area3])
+
+    #test_metric(5, RS_test)
 
 if __name__ == "__main__":
     main()
