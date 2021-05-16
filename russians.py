@@ -304,7 +304,7 @@ def EDP(results1, results2):
 def main():
     #test_algo(60, FourRussians)
     #test_algo(10, matrix_mult)
-    n = [5, 10, 50, 100]#, 500, 1000]
+    n = [5, 10, 50, 100, 500] #, 1000]
 
     energy1 = mass_test_metric(n, matrix_mult_energy)
     print(energy1)
