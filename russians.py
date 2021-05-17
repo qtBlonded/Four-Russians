@@ -408,7 +408,7 @@ def FourRussians_no_cache_area(A, B):
 def main():
     #test_algo(60, FourRussians)
     #test_algo(10, matrix_mult)
-    n = [5, 10, 50]#, 100, 500, 1000]
+    n = [5, 10, 50, 100, 500]#, 1000]
     
     print("Energy for MM, 4R, 4R_no_cache")
     energy1 = mass_test_metric(n, matrix_mult_energy)
